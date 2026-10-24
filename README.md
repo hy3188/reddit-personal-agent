@@ -90,7 +90,9 @@ python3 -m py_compile reddit_client.py tests/test_reddit_client.py
 python3 -m unittest discover -s tests -v   # offline, all HTTP mocked
 ```
 
-CI runs the same two commands on every push and pull request.
+The same two commands are wired for CI in `.github/workflows/ci.yml`
+(add it via the web UI — GitHub blocks workflow files from API pushes —
+and the badge above will light up on the first run).
 Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md). Security policy:
 see [`SECURITY.md`](SECURITY.md). Changes: see
 [`CHANGELOG.md`](CHANGELOG.md).
