@@ -1,69 +1,71 @@
 # reddit-personal-agent
 
-A personal, **non-commercial** OAuth2 client for the official Reddit Data API.
-It is operated **solely by and for one Reddit account** — the owner's own
-account (u/Small-Difficulty4306) — as an assistant integration inside the
-owner's private tooling.
+[![CI](https://github.com/hy3188/reddit-personal-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/hy3188/reddit-personal-agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](reddit_client.py)
 
-> **Status:** Reddit Data API access has been requested under Reddit's
-> [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy)
-> and is pending approval. No API access takes place before explicit approval.
+A personal, **non-commercial** OAuth2 client for the official Reddit Data
+API. It is operated **solely by and for one Reddit account** — the owner's
+own account (u/Small-Difficulty4306) — as an assistant integration inside
+the owner's private tooling. It is not a product, has no other users, and is
+not deployed publicly.
+
+## Status
+
+- **API access request:** submitted to Reddit on 2026-10-24 under the
+  [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy),
+  currently pending approval.
+- **No data is fetched through the API before approval is granted.**
+- **Timing note:** Reddit announced (30 September 2026) that it will stop
+  accepting new public API access requests on **31 October 2026**, with the
+  public Data API winding down afterwards — which is why this request was
+  filed now, with a complete, reviewable implementation attached.
 
 ## What it does
 
-1. **Read** — fetches the owner's home feed and subscribed subreddits to build
-   a personal digest of new posts from communities the owner already follows.
-2. **Organize** — reads the owner's history and saved items to group and
-   summarize them (e.g. saved posts organized by subreddit).
-3. **Write — human-approved only** — when the owner wants to post or reply, the
-   assistant drafts the text, the owner reviews and explicitly approves the
-   exact wording, and only then does the client call the API
-   (`POST /api/submit`, `/api/comment`). The CLI enforces this with an explicit
-   `--owner-approved` flag; there is no unattended posting path.
-4. **Small actions on explicit instruction only** — save/unsave,
-   subscribe/unsubscribe, and votes expressing the owner's own choice on
-   content they personally viewed.
+| Workflow | How | Writes? |
+|---|---|---|
+| Morning digest of subscribed subreddits | `GET /subreddits/mine/subscriber`, then `GET /r/<subs>/new` | No |
+| Organize saved items and history | `GET /api/v1/me`, `GET /user/<name>/saved` | No |
+| Post or reply, after the owner approves the exact text | `POST /api/submit`, `POST /api/comment` | Yes — guarded (below) |
+| Save, subscribe, vote, flair, report | Corresponding endpoints | Only on the owner's explicit instruction |
 
-## Safeguards & policy compliance
+Full workflows, examples, and the "why this needs the Data API" argument
+(including why Devvit, RSS, and scraping do not work) are in
+[`docs/USE_CASE.md`](docs/USE_CASE.md). Per-scope rationale is in
+[`docs/SCOPES.md`](docs/SCOPES.md); the policy statement is in
+[`docs/COMPLIANCE.md`](docs/COMPLIANCE.md).
 
-- Single user, single account. No other accounts, no third-party users.
-- No bulk, scheduled, or mass posting; no identical cross-posting.
-- No vote manipulation or brigading.
-- No private messages without the owner's explicit instruction.
-- No selling, licensing, sharing, or commercializing Reddit data.
-- **No use of Reddit data to train AI/ML models.**
-- No retention of Reddit data beyond completing the requested task.
-- Expected volume: a handful of human-initiated requests per day, far below
-  the 100 QPM free-tier limit.
-- Credentials are **never** stored in this repository. The client reads them
-  from local environment variables / a git-ignored local token file only.
+## How it works
 
-## OAuth configuration
+```
+Owner (chat) ──► Assistant ──► reddit_client.py ──► oauth.reddit.com
+                    │                │
+                    │                ├── OAuth2 authorization-code flow
+                    │                │   (www.reddit.com/api/v1/authorize,
+                    │                │    /api/v1/access_token, client_secret_basic)
+                    │                └── min. gap between calls, Retry-After
+                    │                    backoff on 429, refresh-on-401
+                    └── owner reviews and approves exact text
+                        before any --owner-approved write
+```
 
-| Item | Value |
-|---|---|
-| Flow | OAuth2 authorization code (`duration=permanent` for a refresh token) |
-| Authorize endpoint | `https://www.reddit.com/api/v1/authorize` |
-| Token endpoint | `https://www.reddit.com/api/v1/access_token` |
-| Client authentication | HTTP Basic (`client_secret_basic`) |
-| API host | `https://oauth.reddit.com` |
-| App type (prefs/apps) | **web app**, name `bbcc` |
-| User-Agent | `python:reddit-personal-agent:v0.1.0 (by /u/Small-Difficulty4306)` |
+## Safety rules enforced in code
 
-Requested scopes: `identity read history mysubreddits submit edit vote
-subscribe save privatemessages flair report wikiread`
+- **Human-approved writes only.** `submit` and `comment` refuse to run
+  without `--owner-approved`, set only after the owner reviewed the exact
+  text. `--dry-run` prints the payload without sending it. There is no
+  scheduled, bulk, or unattended posting path.
+- **Single user, single account.** No other accounts are ever accessed.
+- **Rate limits respected.** Minimum gap between calls, bounded backoff on
+  429 honouring `Retry-After`, far below the 100 queries/minute free tier.
+- **No secrets in the repo.** Credentials live in environment variables or a
+  `0600` local token file (see `.env.example`); `.gitignore` excludes them.
+  The client never prints token values, and `revoke` deletes them locally.
+- **No AI training, no redistribution, no retention** beyond the task at
+  hand. See [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md).
 
-## Why not Devvit?
-
-Devvit apps run hosted inside Reddit and are installed into subreddits
-(custom posts, moderator tools, games). Devvit provides no way to build an
-external personal agent that runs off-platform in the user's own tooling,
-obtains OAuth authorization to act on behalf of one individual user's account
-across their personal home feed, saved items and history, or is invoked
-conversationally outside Reddit. This use case requires the classic Data API
-OAuth2 authorization-code flow, which Devvit does not offer.
-
-## Usage
+## Quick start
 
 ```bash
 cp .env.example .env   # fill in your own app credentials locally, never commit .env
@@ -72,11 +74,27 @@ python3 reddit_client.py exchange <code>   # exchange the returned code for toke
 python3 reddit_client.py me                # GET /api/v1/me — verify the connection
 python3 reddit_client.py digest --limit 10 # newest posts from subscribed subreddits
 python3 reddit_client.py saved --limit 10  # the owner's saved items
-python3 reddit_client.py submit --subreddit test --title "..." --text "..." --owner-approved
+python3 reddit_client.py revoke            # revoke tokens and remove the local file
 ```
+
+Create the Reddit app at <https://www.reddit.com/prefs/apps> (type: **web
+app**, name `bbcc`); the redirect URI must match `REDDIT_REDIRECT_URI`
+exactly.
+
+## Development
 
 Python 3.10+, standard library only — no third-party dependencies.
 
+```bash
+python3 -m py_compile reddit_client.py tests/test_reddit_client.py
+python3 -m unittest discover -s tests -v   # offline, all HTTP mocked
+```
+
+CI runs the same two commands on every push and pull request.
+Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md). Security policy:
+see [`SECURITY.md`](SECURITY.md). Changes: see
+[`CHANGELOG.md`](CHANGELOG.md).
+
 ## License
 
-MIT
+MIT — see [`LICENSE`](LICENSE).
