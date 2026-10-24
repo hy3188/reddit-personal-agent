@@ -1,0 +1,5 @@
+.env
+*.token.json
+.reddit-personal-agent-token.json
+__pycache__/
+*.pyc
